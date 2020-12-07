@@ -1,0 +1,221 @@
+---
+title: "credito_disponivel"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    source_code: https://github.com/andreferraribr/tg2r
+    social:
+    - twitter
+    - facebook
+    - menu
+runtime: shiny
+
+---
+
+
+
+```{r setup, include=FALSE}
+options(scipen=999)
+options(digits=2)
+# options (LC_NUMERIC="pt_BR.UTF-8")
+
+
+```
+
+
+
+
+```{r libraries,  message=FALSE}
+library(flexdashboard)
+library(readxl)
+library(ggplot2)
+library(stringr)
+library(plotly)
+library(DT)
+library(knitr)
+library(shiny)
+library(shinyWidgets)
+library(lubridate)
+library(tidyverse)
+library(janitor)
+library(googledrive)
+library(gargle)
+
+
+
+
+
+```
+
+
+```{r negar %in%}
+
+# https://www.r-bloggers.com/the-notin-operator/
+
+'%!in%' <- Negate('%in%')
+```
+
+```{r função "dados" importar e renomear variaveis}
+
+# funcao para importar dados e renomear variaveis
+
+dados = function(tg, depara){
+  # carregar planilha com dados do Tesouro Gerencial (tg)
+  df <- read_xlsx(tg)
+  # carregar planilha com o de_para dos nomes dos atributos do Tesouro Gerencial para nomes mais amigáveis para as variáveis. Por exemplo, de(Unidade Orçamentária Código) para(uo_cod)
+  tg2r <- read_xlsx(depara)
+  # renomear as colunas da df fazendo o de_para
+  colnames(df)<-tg2r$r_name
+  return(df)
+}
+```
+
+```{r função "tabela" formatar numeros incluir totalizador}
+
+# comentar funcao e parametro para totalizar colunas e linhas
+# ajustar formatacao de acordo com a opcao de totalizar
+# criar forma melhor para selecionar apenas colunas numericas para formatacao de valor
+# coluna = "Total" para totalizar columnwise
+tabela = function (df,coluna = NULL) {
+      datatable((df)%>%
+  # "row" para o total aparecer na linha, ou seja, totalizar os valores de uma coluna
+  adorn_totals("row") ,
+      filter = 'top',          
+      extensions = 'Buttons',
+      options = list( 
+                  # order = list (df[(length(df))], 'desc'),
+                  dom = "Blfrtip",
+                  buttons = 
+                    list("copy", list(
+                      extend = "collection",
+                      buttons = c("csv", "excel", "pdf"),
+                      text = "Download" ) ),
+                  lengthMenu = list( c(-1, 5, 10,20),
+                                     c( "tudo",5, 10, 20)),
+                  pageLength = -1 )
+      )%>%
+  formatRound(
+  # formatar apenas as colunas numericas.
+  # sapply para identificar as colunas numericas e combinar com o parametro COLUNA
+    # ((ncol(df %>% select_if(is.character))+1):(ncol(df )+1)),
+    # http://datamining.togaware.com/survivor/Remove_Non_Numeric.html
+    (c(colnames(df[,sapply(df, is.numeric)]), coluna)),
+  digits = 2,
+  interval = 3,
+  mark = ",",
+  dec.mark = getOption("OutDec")
+)
+}
+
+
+# mesma lógica da função "tabela", mas com o objetivo de apresentar os números no formato R$
+tabela_reais = function (df,coluna = NULL) {
+      datatable((df)%>%
+  # "row" para o total aparecer na linha, ou seja, totalizar os valores de uma coluna
+  adorn_totals("row") ,
+      filter = 'top', 
+      rownames = FALSE,
+      extensions = 'Buttons',
+      options = list( 
+                  # order = list (df[(length(df))], 'desc'),
+                  dom = "Blfrtip",
+                  buttons = 
+                    list("copy", list(
+                      extend = "collection",
+                      buttons = c("csv", "excel", "pdf"),
+                      text = "Download" ) ),
+                  lengthMenu = list( c(-1, 5, 10,20),
+                                     c( "tudo",5, 10, 20)),
+                  pageLength = -1 )
+      )%>%
+  formatRound(
+  # formatar apenas as colunas numericas.
+  # sapply para identificar as colunas numericas e combinar com o parametro COLUNA
+    # ((ncol(df %>% select_if(is.character))+1):(ncol(df )+1)),
+    # http://datamining.togaware.com/survivor/Remove_Non_Numeric.html
+    (c(colnames(df[,sapply(df, is.numeric)]), coluna)),
+  digits = 2,
+  interval = 3,
+  mark = ".",
+  dec.mark = ","
+) 
+}
+```
+
+
+
+```{r função "reais" para embelezar numeros}
+
+# embelezar o número do value box
+
+reais <- function(numero){
+  paste0("R$ ",round(numero/1000,digits = 1), " K")
+}
+```
+
+
+
+
+```{r baixar arquivo do google drive, include=FALSE}
+# https://gargle.r-lib.org/articles/non-interactive-auth.html
+
+
+# usar uma vez para obter o token
+
+# drive_auth(use_oob=TRUE)
+
+# designate project-specific cache
+options(gargle_oauth_cache = ".secrets")
+
+# check the value of the option, if you like
+gargle::gargle_oauth_cache()
+
+# trigger auth on purpose --> store a token in the specified cache
+drive_auth()
+
+# see your token file in the cache, if you like
+list.files(".secrets/")
+
+
+
+
+
+drive_download("~/Attachments/r_credito_ifsc.xlsx",
+               overwrite = TRUE)
+
+
+
+
+```
+```{r utilizar a função dados para renomear colunas dos arquivos baixados do Google Drive, eval=FALSE, include=FALSE}
+
+
+
+credito <- dados("r_credito_ifsc.xlsx", "tg2r_credito_ifsc.xlsx")
+
+
+
+
+
+```
+
+
+
+```{r criar na tabela crédito a variável ug_cliente, eval=FALSE, include=FALSE}
+
+
+credito <- credito %>%
+  
+ 
+  # somente se favorecido for UG concatenar código e nome da ug emitente e da ug favorecida
+  # a movimentação de crédito ocorre tanto do cliente para a GRA quanto da GRA para o cliente
+  mutate ( ug_ug = if_else(fav_tipo == "UG" & doc_tipo_cod == "NC" & ug_emit_cod != "170166",str_c(ug_emit_cod,fav_cod,ug_emit,fav),""))%>%
+  # retirar o nome e o código da GRA e manter apenas o código/nome do cliente
+  mutate (ug_cliente = str_replace(ug_ug, "GERENCIA REG.DE ADM.DO ME - SANTA CATARINA",""))%>%
+  mutate (ug_cliente = str_replace(ug_cliente, "170166",""))
+# tabela(credito %>%  filter (ug_cliente !="") %>% group_by(ug_cliente, ugr_cod, fonte_det_cod) %>% summarise(saldo = sum(saldo)))
+
+
+```
+
+
